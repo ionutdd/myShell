@@ -47,10 +47,10 @@ void exitShell() {
     printf("\r\nExiting the shell.\n");
     printf("\r");
 
+    exit(EXIT_SUCCESS);
+    
     sleep(1);
     endwin();
-
-    exit(EXIT_SUCCESS);
 }
 
 void displayPrompt(char *cwd) {

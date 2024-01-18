@@ -459,8 +459,8 @@ int main() {
             char *right_cmd = strtok(NULL, "|");
 
             // Trim leading and trailing whitespaces
-            left_cmd = strtok(left_cmd, "\t");
-            right_cmd = strtok(right_cmd, "\t");
+            left_cmd = strtok(left_cmd, " \t");
+            right_cmd = strtok(right_cmd, " \t");
 
             // Execute the pipe command
             operator_pipe(left_cmd, right_cmd);
@@ -473,8 +473,8 @@ int main() {
             char *right_cmd = strtok(NULL, "&&");
 
             // Trim leading and trailing whitespaces
-            left_cmd = strtok(left_cmd, "\t");
-            right_cmd = strtok(right_cmd, "\t");
+            left_cmd = strtok(left_cmd, " \t");
+            right_cmd = strtok(right_cmd, " \t");
 
             // Execute the AND command
             if (operator_and(left_cmd, right_cmd) == 0) {
@@ -535,7 +535,6 @@ int main() {
             }
             // EXIT cu ^Z
             if (strcmp(args[0], "^Z") == 0) {
-                printf("Exiting the shell.\n");
                 exitShell();
             }
             // HISTORY-C

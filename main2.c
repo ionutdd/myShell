@@ -14,15 +14,8 @@
 pid_t pid;
 
 //Afisare Prompt
-void displayPrompt() 
-{
-    char cwd[1024];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf("Shell [%s]> ", cwd);
-    } else {
-        perror("getcwd");
-        printf("Shell> ");
-    }
+void displayPrompt(char *cwd) {
+    printf("\rShell [%s]> ", cwd);
     fflush(stdout);
 }
 
@@ -49,6 +42,7 @@ void changeDirectory(char *directory)
         if (chdir(directory) != 0) 
             perror("shell"); 
     }
+    printf("\r\n");
 }
 
 //Listarea folderului
@@ -60,6 +54,9 @@ void executeLs()
     int status;
 
     pid = fork();
+    
+    printf("\r\n");
+
     if (pid == 0) {
         // Child process
         if (execvp(ls_args[0], ls_args) == -1) {
@@ -78,7 +75,11 @@ void executeLs()
 //Iesirea din shell
 void exitShell() 
 {
-    printf("Exiting the shell.\n");
+    printf("\r\nExiting the shell.\n");
+    
+    sleep(1);
+    endwin();
+    
     exit(EXIT_SUCCESS);
 }
 
@@ -86,7 +87,7 @@ void exitShell()
 void sigtstp_handler(int signo) 
 {
     if (signo == SIGTSTP) {
-        printf("\n");
+        printf("\r\n");
         exitShell();
     }
 }
@@ -94,9 +95,9 @@ void sigtstp_handler(int signo)
 //Afisarea istoricului
 void displayHistory(char **history, int historyCount) 
 {
-    printf("\nCommand History:\n");
+    printf("\r\nCommand History:\n");
     for (int i = 0; i < historyCount; ++i) {
-        printf("%d: %s\n", i + 1, history[i]);
+        printf("\r%d: %s\n", i + 1, history[i]);
     }
 }
 
@@ -109,20 +110,20 @@ void clearHistory(char **history, int *historyCount) {
     }
     *historyCount = 0;
 
-    printf("Commands in history cleared!\n");
+    printf("\r\nCommands in history cleared!\n");
 }
 
 //Afiseaza numarul de comenzi din history
 void displayHistoryCount(int historyCount) {
-    printf("Number of commands in history: %d\n", historyCount);
+    printf("\r\nNumber of commands in history: %d\n", historyCount);
 }
 
 //Afiseaza ultimele n comenzi
 void displayRecentCommands(char **history, int historyCount, int number) {
     int start = (historyCount >= number) ? (historyCount - number) : 0;
-    printf("\nRecent Commands:\n");
+    printf("\r\nRecent Commands:\n");
     for (int i = start; i < historyCount; ++i) {
-        printf("%d: %s\n", i + 1, history[i]);
+        printf("\r%d: %s\n", i + 1, history[i]);
     }
 }
 
@@ -138,12 +139,12 @@ int isNumber(const char *str) {
 //Executarea ultimei linii din history
 void executeLastCommand(char **history, int *historyIndex, int historyCount) {
     if (historyCount == 1) {
-        printf("No commands in history.\n");
+        printf("\r\nNo commands in history.\n");
         return;
     }
 
     char *lastCommand = history[historyCount-2];
-    printf("Executing last command: %s\n", lastCommand);
+    printf("\r\nExecuting last command: %s\n", lastCommand);
 
 
     // CD 
@@ -191,7 +192,7 @@ void executeLastCommand(char **history, int *historyIndex, int historyCount) {
         }
         else
         {
-            printf("Wrong command!\n");
+            printf("\r\nWrong command!\n");
             
         }
 
@@ -203,7 +204,7 @@ void executeLastCommand(char **history, int *historyIndex, int historyCount) {
         
     }
     else
-        printf("Wrong command!\n");
+        printf("\r\nWrong command!\n");
     
 }
 
@@ -257,7 +258,7 @@ int evaluate_command(const char* command) {
 int operator_pipe(const char* a_left, const char* a_right) {
     pid_t son = fork();
     if (son < 0) {
-        perror("Error at fork");
+        perror("\r\nError at fork");
         return EXIT_FAILURE;
     }
 
@@ -271,13 +272,13 @@ int operator_pipe(const char* a_left, const char* a_right) {
         int fd[2];
 
         if (pipe(fd) < 0) {
-            perror("Error creating pipe");
+            perror("\r\nError creating pipe");
             exit(EXIT_FAILURE);
         }
 
         pid_t grandson = fork(); // The child creates another child that will execute the left command
         if (grandson < 0) {
-            perror("Error at second fork");
+            perror("\r\nError at second fork");
             exit(EXIT_FAILURE);
         }
 
@@ -374,7 +375,7 @@ void suspend_handler()
     extern pid_t pid;
 
     
-    printf("\n^Z\nStopped\n");
+    printf("\r\n^Z\nStopped\n");
     kill(pid, SIGKILL);
     
 }
@@ -421,7 +422,7 @@ void executeRunCommand(char *filename) {
             }
         } else {
             // Compilation failed
-            printf("Compilation failed. Unable to run the program.\n");
+            printf("\r\nCompilation failed. Unable to run the program.\n");
         }
     } else {
         // Fork failed
@@ -429,9 +430,128 @@ void executeRunCommand(char *filename) {
     }
 }
 
+void handleInput(char *input, int *index, char **history, int *historyIndex, int *historyCount, char *cwd) {
+    int ch;
+    while ((ch = getch()) != '\n') {
+        switch (ch) {
+            case KEY_UP:
+                // Up arrow key pressed, cycle through history
+                if (*historyCount > 0) {
+                    if (*historyIndex > 0) {
+                        (*historyIndex)--;
+                        printf("\rShell [%s]> ", cwd);
+                        printf("\033[K%s", history[*historyIndex]);
+                        fflush(stdout);
+                        *index = strlen(history[*historyIndex]);
+                        strcpy(input, history[*historyIndex]);
+                    }
+                    else
+                    {
+                        printf("\rShell [%s]> ", cwd);
+                        printf("\033[K%s", history[*historyCount-1]);
+                        fflush(stdout);
+                        *index = strlen(history[*historyCount-1]);
+                        strcpy(input, history[*historyCount-1]);
+                        (*historyIndex)=(*historyCount)-1;
+                    }
+                }
+                break;
 
+            case KEY_DOWN:
+                // Down arrow key pressed, cycle through history
+                if (*historyCount > 0) {
+                    if (*historyIndex < *historyCount - 1) {
+                        (*historyIndex)++;
+                        printf("\rShell [%s]> ", cwd);
+                        printf("\033[K%s", history[*historyIndex]);
+                        fflush(stdout);
+                        *index = strlen(history[*historyIndex]);
+                        strcpy(input, history[*historyIndex]);
+                    }
+                }
+                break;
 
+            case KEY_LEFT:
+                // Left arrow key pressed, move cursor left
+                if (*index > 0) {
+                    printf("\033[D");  // Move left
+                    fflush(stdout);
+                    (*index)--;
+                }
+                break;
 
+            case KEY_RIGHT:
+                // Right arrow key pressed, move cursor right
+                if (*index < strlen(input)) {
+                    printf("\033[C");  // Move right
+                    fflush(stdout);
+                    (*index)++;
+                }
+                break;
+
+            case KEY_BACKSPACE:
+            // Backspace key pressed, handle deletion
+                if (*index > 0) {
+                    // Verifică dacă cursorul nu este la începutul inputului
+                    if (*index < strlen(input)) {
+                        // Șterge caracterul curent
+                        for (int i = *index; i < strlen(input); ++i) {
+                            input[i - 1] = input[i];
+                        }
+                        input[strlen(input) - 1] = '\0';
+                
+                        // Afisează întregul input actualizat
+                        printf("\rShell [%s]> %s \033[K", cwd, input);
+
+                        //scad indexul in stg pentru a muta cursorul
+                        (*index)--;
+                        
+                        // Ramane cursorul acolo unde sterg rezolva un bug, de ce??? NU STIU dar il rezolva
+                        for (int i = strlen(input); i >= *index; --i) {
+                            printf("\b");
+                        }
+                        fflush(stdout);
+                    } else {
+                        // Muta cursorul la stânga și șterge caracterul
+                        printf("\b \b");
+                        fflush(stdout);
+                        (*index)--;
+                        input[*index] = '\0';
+                    }
+                }
+                break;
+
+            default:
+                // Other keys
+                if (*index < MAX_INPUT_SIZE - 1) {
+                    // Deplasează caracterele la dreapta pentru a face loc noului caracter
+                    for (int i = strlen(input); i > *index && strlen(input)>0; --i) {
+                        input[i] = input[i - 1];
+                    }
+
+                    // Inserează noul caracter la poziția curenta a cursorului
+                    input[*index] = ch;
+
+                    // Afiseaza intregul input actualizat
+                    printf("\rShell [%s]> %s \033[K", cwd, input);
+
+                    // Muta cursorul la dreapta pentru a reflecta noul caracter
+                    for (int i = *index; i < strlen(input); ++i) {
+                        printf("\b");
+                    }
+
+                    (*index)++;
+
+                    input[strlen(input)] = '\0';
+                    
+                    fflush(stdout);
+                }
+                
+                break;
+
+        }
+    }
+}
 
 
 //SHELL MAIN
@@ -442,161 +562,181 @@ int main() {
     char input[MAX_INPUT_SIZE];
     char *args[MAX_INPUT_SIZE / 2 + 1];
     char *history[HISTORY_SIZE];
-
     int historyIndex = 0;
     int historyCount = 0;
 
+    initscr();
+    raw();
+    keypad(stdscr, TRUE);
+    noecho();
+
+    refresh();
+
     while (1) 
     {
+        char cwd[1024];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            perror("getcwd");
+            return EXIT_FAILURE;
+        }
         //Afisarea Promptului
-        displayPrompt();
+        displayPrompt(cwd);
 
-        // Citim input-ul
-        fgets(input, MAX_INPUT_SIZE, stdin);
-        input[strcspn(input, "\n")] = '\0';
+        //resetez indexul
+        int index = 0;
+        //resetez inputul
+        for (int i=0;i<MAX_INPUT_SIZE;i++)
+            input[i]='\0';
 
-         int index = 0;
+        // Read user input
+        handleInput(input, &index, history, &historyIndex, &historyCount, cwd);
 
-     
+        if (input[0]!='\0') {
 
-        // Adaugam comanda la history
-        addCommandToHistory(input, history, &historyIndex, &historyCount);
+            // Adaugam comanda la history
+            addCommandToHistory(input, history, &historyIndex, &historyCount);
 
-        // Check for pipe command
-        if (strstr(input, "|") != NULL) 
-        {
-            // Split the input into left and right commands
-            char *left_cmd = strtok(input, "|");
-            char *right_cmd = strtok(NULL, "|");
+            index=strlen(input);
 
-            // Trim leading and trailing whitespaces
-            left_cmd = strtok(left_cmd, " \t");
-            right_cmd = strtok(right_cmd, " \t");
+            // Check for pipe command
+            if (strstr(input, "|") != NULL) 
+            {
+                // Split the input into left and right commands
+                char *left_cmd = strtok(input, "|");
+                char *right_cmd = strtok(NULL, "|");
 
-            // Execute the pipe command
-            operator_pipe(left_cmd, right_cmd);
-        }
-        // Check for AND command
-        else if (strstr(input, "&&") != NULL) 
-        {
-            // Split the input into left and right commands
-            char *left_cmd = strtok(input, "&&");
-            char *right_cmd = strtok(NULL, "&&");
+                // Trim leading and trailing whitespaces
+                left_cmd = strtok(left_cmd, " \t");
+                right_cmd = strtok(right_cmd, " \t");
 
-            // Trim leading and trailing whitespaces
-            left_cmd = strtok(left_cmd, " \t");
-            right_cmd = strtok(right_cmd, " \t");
-
-            // Execute the AND command
-            if (operator_and(left_cmd, right_cmd) == 0) {
-                continue;  // Do not execute the right command if the left one fails
+                // Execute the pipe command
+                operator_pipe(left_cmd, right_cmd);
             }
-        }
-        // Check for OR command
-        else if (strstr(input, "||") != NULL) 
-        {
-            // Split the input into left and right commands
-            char *left_cmd = strtok(input, "||");
-            char *right_cmd = strtok(NULL, "||");
+            // Check for AND command
+            else if (strstr(input, "&&") != NULL) 
+            {
+                // Split the input into left and right commands
+                char *left_cmd = strtok(input, "&&");
+                char *right_cmd = strtok(NULL, "&&");
 
-            // Trim leading and trailing whitespaces
-            left_cmd = strtok(left_cmd, " \t");
-            right_cmd = strtok(right_cmd, " \t");
+                // Trim leading and trailing whitespaces
+                left_cmd = strtok(left_cmd, " \t");
+                right_cmd = strtok(right_cmd, " \t");
 
-            // Execute the OR command
-            if (operator_or(left_cmd, right_cmd) == 1) {
-                continue;  // Do not execute the right command if the left one succeeds
+                // Execute the AND command
+                if (operator_and(left_cmd, right_cmd) == 0) {
+                    continue;  // Do not execute the right command if the left one fails
+                }
+            }
+            // Check for OR command
+            else if (strstr(input, "||") != NULL) 
+            {
+                // Split the input into left and right commands
+                char *left_cmd = strtok(input, "||");
+                char *right_cmd = strtok(NULL, "||");
+
+                // Trim leading and trailing whitespaces
+                left_cmd = strtok(left_cmd, " \t");
+                right_cmd = strtok(right_cmd, " \t");
+
+                // Execute the OR command
+                if (operator_or(left_cmd, right_cmd) == 1) {
+                    continue;  // Do not execute the right command if the left one succeeds
+                }
+            }
+            else
+            {
+                // Transformam input-ul in argumente
+                char *token = strtok(input, " ");
+                int i = 0;
+                while (token != NULL) {
+                    args[i] = token;
+                    token = strtok(NULL, " ");
+                    i++;
+                }
+                args[i] = NULL;
+
+                if (strcmp(args[0], "run") == 0 && args[1] != NULL) {
+                executeRunCommand(args[1]);
+                continue;
+                }
+
+                if (strcmp(args[0], "suspend") == 0) {
+                    suspend_handler();
+                    continue;
+                }
+                // CD 
+                if (strcmp(args[0], "cd") == 0) {
+                    changeDirectory(args[1]);
+                    continue;
+                }
+                // LS
+                if (strcmp(args[0], "ls") == 0 && args[1]==NULL) {
+                    executeLs();
+                    continue;
+                }
+                // EXIT
+                if (strcmp(args[0], "exit") == 0 && args[1]==NULL) {
+                    exitShell();
+                }
+                // EXIT cu ^Z
+                if (strcmp(args[0], "^Z") == 0) {
+                    exitShell();
+                }
+                // HISTORY-C
+                if (strcmp(args[0], "history-c") == 0 && historyCount > 0 && args[1]==NULL) {
+                    clearHistory(history, &historyCount);
+                    continue;
+                }    
+                // HISTORY-N
+                if (strcmp(args[0], "history-n") == 0 && args[1]==NULL){
+                    displayHistoryCount(historyCount);
+                    continue;
+                }
+                // HISTORY-NUMBER
+                if (strstr(args[0], "history-") != NULL && args[1]==NULL){
+                
+                    char *numberPart = args[0] + 8; 
+                    if (isNumber(numberPart)) {
+                        int number = atoi(numberPart);
+                        displayRecentCommands(history, historyCount, number);
+                        continue;
+                    }
+                    else
+                    {
+                        printf("Wrong command!\n");
+                        continue;
+                    }
+
+                }
+                // HISTORY
+                if (strcmp(args[0], "history") == 0 && args[1]==NULL){
+                    displayHistory(history,historyCount);
+                    continue;
+                }
+                // !!
+                if (strcmp(args[0], "!!") == 0 && args[1]==NULL) {
+                    executeLastCommand(history, &historyIndex, historyCount);
+                    continue;
+                }
+                // CLEAR
+                if (strcmp(args[0], "clear") == 0 && args[1]==NULL) {
+                    clearShell();
+                    continue;
+                }
+                printf("\r\nWrong command!\n");
             }
         }
         else
-        {
-
-            // Transformam input-ul in argumente
-            char *token = strtok(input, " ");
-            int i = 0;
-            while (token != NULL) {
-                args[i] = token;
-                token = strtok(NULL, " ");
-                i++;
-            }
-            args[i] = NULL;
-
-            if (strcmp(args[0], "run") == 0 && args[1] != NULL) {
-            executeRunCommand(args[1]);
             continue;
-            }
-
-            if (strcmp(args[0], "suspend") == 0) {
-                suspend_handler();
-                continue;
-            }
-            // CD 
-            if (strcmp(args[0], "cd") == 0) {
-                changeDirectory(args[1]);
-                continue;
-            }
-            // LS
-            if (strcmp(args[0], "ls") == 0 && args[1]==NULL) {
-                executeLs();
-                continue;
-            }
-            // EXIT
-            if (strcmp(args[0], "exit") == 0 && args[1]==NULL) {
-                exitShell();
-            }
-            // EXIT cu ^Z
-            if (strcmp(args[0], "^Z") == 0) {
-                exitShell();
-            }
-            // HISTORY-C
-            if (strcmp(args[0], "history-c") == 0 && historyCount > 0 && args[1]==NULL) {
-                clearHistory(history, &historyCount);
-                continue;
-            }    
-            // HISTORY-N
-            if (strcmp(args[0], "history-n") == 0 && args[1]==NULL){
-                displayHistoryCount(historyCount);
-                continue;
-            }
-            // HISTORY-NUMBER
-            if (strstr(args[0], "history-") != NULL && args[1]==NULL){
-            
-                char *numberPart = args[0] + 8; 
-                if (isNumber(numberPart)) {
-                    int number = atoi(numberPart);
-                    displayRecentCommands(history, historyCount, number);
-                    continue;
-                }
-                else
-                {
-                    printf("Wrong command!\n");
-                    continue;
-                }
-
-            }
-            // HISTORY
-            if (strcmp(args[0], "history") == 0 && args[1]==NULL){
-                displayHistory(history,historyCount);
-                continue;
-            }
-            // !!
-            if (strcmp(args[0], "!!") == 0 && args[1]==NULL) {
-                executeLastCommand(history, &historyIndex, historyCount);
-                continue;
-            }
-            // CLEAR
-            if (strcmp(args[0], "clear") == 0 && args[1]==NULL) {
-                clearShell();
-                continue;
-            }
-            printf("Wrong command!\n");
-        }
     }
 
     // Dealocam memoria care a fost alocata pentru history
     for (int i = 0; i < HISTORY_SIZE; ++i) {
         free(history[i]);
     }
+
+    endwin();
 
     return 0;
 }
