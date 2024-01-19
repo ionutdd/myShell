@@ -1,5 +1,8 @@
 //Local
 
+///PROBLEMA LA PIPE && ||
+///PROBLEMA LA CUM SE EXECUTA COMENZILE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,9 +10,10 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <ncurses.h>
+#include <signal.h>
 
 #define MAX_INPUT_SIZE 1024
-#define HISTORY_SIZE 10
+#define HISTORY_SIZE 100
 
 pid_t pid;
 
@@ -39,26 +43,27 @@ void changeDirectory(char *directory)
         //fprintf(stderr, "shell: expected argument to \"cd\"\n");
     }
     else {
-        if (chdir(directory) != 0) 
+        if (chdir(directory) != 0){ 
+            printf("\r\n");
             perror("shell"); 
+        }
     }
     printf("\r\n");
 }
 
 //Listarea folderului
-void executeLs() 
+void executeLs(const char* cwd) 
 {
     char *ls_args[] = {"ls", NULL};
 
     pid_t pid;
     int status;
-
-    pid = fork();
-    
     printf("\r\n");
+    pid = fork();
 
     if (pid == 0) {
         // Child process
+        
         if (execvp(ls_args[0], ls_args) == -1) {
             perror("shell");
             exit(EXIT_FAILURE);
@@ -81,6 +86,14 @@ void exitShell()
     endwin();
     
     exit(EXIT_SUCCESS);
+}
+
+void handle_ctrl_z(int signal) {
+    endwin();  // Eliberează ncurses înainte de a suspenda
+    struct sigaction act;
+    act.sa_handler = SIG_DFL;
+    sigaction(SIGTSTP, &act, NULL);  // Restabilește semnalul la comportamentul implicit
+    raise(SIGTSTP);  // Suspendă procesul
 }
 
 //Exit in caz de folosirea CTRL+Z
@@ -137,8 +150,8 @@ int isNumber(const char *str) {
 }
 
 //Executarea ultimei linii din history
-void executeLastCommand(char **history, int *historyIndex, int historyCount) {
-    if (historyCount == 1) {
+void executeLastCommand(char **history, int *historyIndex, int historyCount, char *cwd) {
+    if (historyCount == 0) {
         printf("\r\nNo commands in history.\n");
         return;
     }
@@ -146,16 +159,16 @@ void executeLastCommand(char **history, int *historyIndex, int historyCount) {
     char *lastCommand = history[historyCount-2];
     printf("\r\nExecuting last command: %s\n", lastCommand);
 
-
-    // CD 
-    if (strcmp(lastCommand, "cd") == 0) {
-        changeDirectory(lastCommand);
-        
+    // CD verific daca primele 2 caractere sunt cd
+    if (strncmp(lastCommand, "cd", 2) == 0) {
+        char *lastCommandAux= strcpy(lastCommandAux, lastCommand);
+        lastCommandAux=strcpy(lastCommandAux, lastCommandAux+3);//trebuie sa retin in last command doar pathul
+        changeDirectory(lastCommandAux);
     }
     else
     // LS
     if (strcmp(lastCommand, "ls") == 0 ) {
-        executeLs();
+        executeLs(cwd);
         
     }
     else
@@ -257,10 +270,13 @@ int evaluate_command(const char* command) {
 
 int operator_pipe(const char* a_left, const char* a_right) {
     pid_t son = fork();
+
     if (son < 0) {
         perror("\r\nError at fork");
         return EXIT_FAILURE;
     }
+
+    printf("\r");
 
     if (son == 0) {
         // The child will do the piping operator
@@ -284,14 +300,12 @@ int operator_pipe(const char* a_left, const char* a_right) {
 
         if (grandson == 0) {
             // Grandson code for the left command
-
             // Close the read end because we will not use it
             close(fd[0]);
-
             // Redirect stdout to the write end of the pipe
             dup2(fd[1], STDOUT_FILENO);
             close(fd[1]);
-
+            
             // Execute the left command
             int left_status = evaluate_command(a_left);
 
@@ -339,32 +353,28 @@ int operator_pipe(const char* a_left, const char* a_right) {
     return overall_status;
 }
 
-
-
-
 //operatorii logici and si or
-//operatorii logici and si or
-int operator_and(const char* a_left, const char* a_right)
+//The first command executed successfully, so we don't run the 2nd
+//If the first didn't, we run the 2nd
+int operator_or(const char* a_left, const char* a_right)
 {
-    // The first command executed successfully
+    
     if (evaluate_command(a_left) == 1)
     {
-        // So we run the second one too
         return evaluate_command(a_right);
     }
-    // The first command failed
     return 0;
 }
 
-int operator_or(const char* a_left, const char* a_right)
+
+//The first command executed successfully, so we execute the 2nd as well
+//If the first didn't, we don't try the 2nd
+int operator_and(const char* a_left, const char* a_right)
 {
-    // The first command failed
     if (evaluate_command(a_left) == 0)
     {
-        // So we run the second one too
         return evaluate_command(a_right);
     }
-    // The first command executed successfully
     return 1;
 }
 
@@ -568,6 +578,7 @@ int main() {
     initscr();
     raw();
     keypad(stdscr, TRUE);
+    cbreak();
     noecho();
 
     refresh();
@@ -591,33 +602,42 @@ int main() {
         // Read user input
         handleInput(input, &index, history, &historyIndex, &historyCount, cwd);
 
-        if (input[0]!='\0') {
+        // Configurează funcția care va trata Ctrl+Z
+        struct sigaction act;
+        act.sa_handler = handle_ctrl_z;
+        sigaction(SIGTSTP, &act, NULL);
 
-            // Adaugam comanda la history
+        if (input[0]!='\0') {
+            
+            // Adaugam comanda la history daca nu e !!
             addCommandToHistory(input, history, &historyIndex, &historyCount);
 
             index=strlen(input);
 
+
+            //Check for AND command
             // Check for pipe command
-            if (strstr(input, "|") != NULL) 
+            if (strstr(input, "||") != NULL) 
             {
                 // Split the input into left and right commands
-                char *left_cmd = strtok(input, "|");
-                char *right_cmd = strtok(NULL, "|");
+                char *left_cmd = strtok(input, "||");
+                char *right_cmd = strtok(NULL, "|| ");
 
                 // Trim leading and trailing whitespaces
                 left_cmd = strtok(left_cmd, " \t");
                 right_cmd = strtok(right_cmd, " \t");
 
-                // Execute the pipe command
-                operator_pipe(left_cmd, right_cmd);
+                // Execute the OR command
+                if (operator_or(left_cmd, right_cmd) == 1) {
+                    continue;  // Do not execute the right command if the left one succeeds
+                }
             }
             // Check for AND command
             else if (strstr(input, "&&") != NULL) 
             {
                 // Split the input into left and right commands
                 char *left_cmd = strtok(input, "&&");
-                char *right_cmd = strtok(NULL, "&&");
+                char *right_cmd = strtok(NULL, "&& ");
 
                 // Trim leading and trailing whitespaces
                 left_cmd = strtok(left_cmd, " \t");
@@ -628,21 +648,20 @@ int main() {
                     continue;  // Do not execute the right command if the left one fails
                 }
             }
+            // Check for pipe command
             // Check for OR command
-            else if (strstr(input, "||") != NULL) 
-            {
+            else if (strstr(input, "|") != NULL) 
+            {   
                 // Split the input into left and right commands
-                char *left_cmd = strtok(input, "||");
-                char *right_cmd = strtok(NULL, "||");
+                char *left_cmd = strtok(input, "|");
+                char *right_cmd = strtok(NULL, "|");
 
                 // Trim leading and trailing whitespaces
                 left_cmd = strtok(left_cmd, " \t");
                 right_cmd = strtok(right_cmd, " \t");
 
-                // Execute the OR command
-                if (operator_or(left_cmd, right_cmd) == 1) {
-                    continue;  // Do not execute the right command if the left one succeeds
-                }
+                // Execute the pipe command
+                operator_pipe(left_cmd, right_cmd);
             }
             else
             {
@@ -657,8 +676,9 @@ int main() {
                 args[i] = NULL;
 
                 if (strcmp(args[0], "run") == 0 && args[1] != NULL) {
-                executeRunCommand(args[1]);
-                continue;
+                    printf("\r\n");
+                    executeRunCommand(args[1]);
+                    continue;
                 }
 
                 if (strcmp(args[0], "suspend") == 0) {
@@ -672,7 +692,7 @@ int main() {
                 }
                 // LS
                 if (strcmp(args[0], "ls") == 0 && args[1]==NULL) {
-                    executeLs();
+                    executeLs(cwd);
                     continue;
                 }
                 // EXIT
@@ -716,7 +736,7 @@ int main() {
                 }
                 // !!
                 if (strcmp(args[0], "!!") == 0 && args[1]==NULL) {
-                    executeLastCommand(history, &historyIndex, historyCount);
+                    executeLastCommand(history, &historyIndex, historyCount, cwd);
                     continue;
                 }
                 // CLEAR
@@ -727,8 +747,11 @@ int main() {
                 printf("\r\nWrong command!\n");
             }
         }
-        else
+        else{
+            printf("\n");
+            displayPrompt(cwd);
             continue;
+        }
     }
 
     // Dealocam memoria care a fost alocata pentru history
